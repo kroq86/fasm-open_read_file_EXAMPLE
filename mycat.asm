@@ -3,7 +3,7 @@ format ELF64 executable
 include "linux.inc"
 
 file_handle dq 0
-filename db 'lol.txt', 0
+filename db '123lol.txt', 0
 buffer_size equ 1024
 buffer rb buffer_size
 
@@ -19,6 +19,8 @@ open:
     mov rsi, 0
     mov rdx, 0
     syscall
+    test rax, rax
+    js open_failed
     mov r8, rax
     
 read:
@@ -41,7 +43,10 @@ close:
 
 exit EXIT_SUCCESS
 
- 
+open_failed:
+    syscall3 SYS_write, STDOUT, open_failed_msg, open_failed_msg_len
+    exit EXIT_FAILURE
+
 segment readable writeable
 
 greet_msg db "Start", 10
@@ -49,4 +54,3 @@ greet_msg_len = $ - greet_msg
 
 open_failed_msg db "Failed to open the file.", 10
 open_failed_msg_len = $ - open_failed_msg
-
