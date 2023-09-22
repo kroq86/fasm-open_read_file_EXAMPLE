@@ -1,7 +1,6 @@
 SYS_read equ 0
 SYS_write equ 1
 SYS_exit equ 60
-SYS_socket equ 41
 SYS_accept equ 43
 SYS_close equ 3
 
