@@ -1,6 +1,6 @@
 format ELF64 executable
 
-; Include the Linux headers
+; Include the Linux syscalls and macro
 include "linux.inc"
 
 ; Define a file handle and the filename to open
