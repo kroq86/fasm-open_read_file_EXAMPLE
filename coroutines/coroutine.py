@@ -47,9 +47,13 @@ class Generator(GeneratorStruct):
             return None
         
         try:
-            # Call generator_next with self and arg
-            return lib.python_generator_next(ctypes.byref(self), 
-                                           ctypes.c_void_p(arg) if arg is not None else None)
+            # For the first call, pass self as the argument to the generator function
+            if self.fresh:
+                return lib.python_generator_next(ctypes.byref(self), ctypes.byref(self))
+            else:
+                # For subsequent calls, pass the provided argument
+                return lib.python_generator_next(ctypes.byref(self), 
+                                               ctypes.c_void_p(arg) if arg is not None else None)
         except Exception as e:
             # Mark the generator as dead if an exception occurs
             self.dead = True
@@ -58,8 +62,9 @@ class Generator(GeneratorStruct):
 
 def example_generator(arg):
     try:
-        print("Generator started")
-        print(f"Generator arg: {arg}")
+        # Convert the argument to a generator pointer
+        gen_ptr = ctypes.cast(arg, ctypes.c_void_p).value
+        print(f"Generator started with arg: {hex(gen_ptr) if gen_ptr else 'NULL'}")
         
         # Yield a value
         result = lib.python_generator_yield(ctypes.c_void_p(1))
@@ -70,16 +75,16 @@ def example_generator(arg):
         print(f"Generator resumed with {result}")
         
         print("Generator finished")
-        return None
     except Exception as e:
         print(f"Exception in generator function: {e}")
     finally:
-        # Mark the generator as dead
+        # Mark the generator as dead if needed
         if arg:
             try:
                 gen = ctypes.cast(arg, ctypes.POINTER(GeneratorStruct))
                 if gen:
                     gen.contents.dead = True
+                    print(f"Marked generator as dead: {gen.contents.dead}")
             except Exception as e:
                 print(f"Error marking generator as dead: {e}")
 

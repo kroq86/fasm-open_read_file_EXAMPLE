@@ -104,11 +104,22 @@ generator_next:
     ; Mark generator as not fresh
     mov byte [rdi + Generator.fresh], 0
     
-    ; Call the generator function
-    push rdi    ; Save generator
+    ; Save the generator pointer
+    push rdi
+    
+    ; Get the function pointer
+    mov rax, [rdi + Generator.func]
+    
+    ; Check if function pointer is valid
+    test rax, rax
+    jz .func_error
+    
+    ; Call the generator function with the argument
     mov rdi, rsi    ; Pass argument
-    call [rdi + Generator.func]
-    pop rdi     ; Restore generator
+    call rax
+    
+    ; Restore the generator pointer
+    pop rdi
     
     ; Mark generator as dead
     mov byte [rdi + Generator.dead], 1
@@ -117,8 +128,14 @@ generator_next:
     xor rax, rax
     ret
     
-.dead_generator:
-    ; Return NULL for dead generators
+.func_error:
+    ; Pop the saved generator pointer
+    pop rdi
+    
+    ; Mark generator as dead
+    mov byte [rdi + Generator.dead], 1
+    
+    ; Return NULL
     xor rax, rax
     ret
 
@@ -156,6 +173,11 @@ generator__finish_current:
     debug_print dbg_finish, dbg_finish_len
     
     ; Return NULL
+    xor rax, rax
+    ret
+
+.dead_generator:
+    ; Return NULL for dead generators
     xor rax, rax
     ret
 

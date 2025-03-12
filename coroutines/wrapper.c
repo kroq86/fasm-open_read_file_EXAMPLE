@@ -56,6 +56,21 @@ void* python_generator_next(void* g, void* arg) {
     generator_stack->items[generator_stack->count++] = g;
     
     printf("DEBUG: python_generator_next - stack count: %zu\n", generator_stack->count);
+    printf("DEBUG: Generator at %p, arg at %p\n", g, arg);
+    
+    // Print generator info
+    typedef struct {
+        char fresh;
+        char dead;
+        char padding[6];
+        void* rsp;
+        void* stack_base;
+        void* func;
+    } Generator;
+    
+    Generator* gen = (Generator*)g;
+    printf("DEBUG: Generator info - fresh: %d, dead: %d, func: %p\n", 
+           gen->fresh, gen->dead, gen->func);
     
     // Call the assembly function
     void* result = generator_next(g, arg);
