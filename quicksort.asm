@@ -19,7 +19,7 @@ segment readable writeable
     msg_unsorted_len = $ - msg_unsorted
     msg_sorted db 0xA, 'Sorted array:', 0xA
     msg_sorted_len = $ - msg_sorted
-    space db ' '
+    number_space db ' '
     newline db 0xA
     array dq 64, 34, 25, 12, 22, 11, 90, 87, 45, 33  ; Test array
     number_buffer rb 32                               ; For number printing
