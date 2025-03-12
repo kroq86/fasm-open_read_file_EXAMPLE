@@ -36,64 +36,11 @@ dbg_init_len = $ - dbg_init
 dbg_next db 'DEBUG: generator_next called', 0xA, 0
 dbg_next_len = $ - dbg_next
 
-dbg_switch db 'DEBUG: generator_switch_context called', 0xA, 0
-dbg_switch_len = $ - dbg_switch
-
-dbg_fresh db 'DEBUG: handling fresh generator', 0xA, 0
-dbg_fresh_len = $ - dbg_fresh
-
-dbg_not_fresh db 'DEBUG: handling existing generator', 0xA, 0
-dbg_not_fresh_len = $ - dbg_not_fresh
-
 dbg_yield db 'DEBUG: generator_yield called', 0xA, 0
 dbg_yield_len = $ - dbg_yield
 
-dbg_return db 'DEBUG: generator_return called', 0xA, 0
-dbg_return_len = $ - dbg_return
-
 dbg_finish db 'DEBUG: generator finished', 0xA, 0
 dbg_finish_len = $ - dbg_finish
-
-dbg_stack_error db 'ERROR: Invalid stack base pointer', 0xA, 0
-dbg_stack_error_len = $ - dbg_stack_error
-
-dbg_func_error db 'ERROR: Invalid function pointer', 0xA, 0
-dbg_func_error_len = $ - dbg_func_error
-
-dbg_stack_base db 'DEBUG: stack_base=0x'
-dbg_stack_base_val rb 16
-db 0xA, 0
-dbg_stack_base_len = $ - dbg_stack_base
-
-dbg_func db 'DEBUG: func=0x'
-dbg_func_val rb 16
-db 0xA, 0
-dbg_func_len = $ - dbg_func
-
-dbg_finish_addr db 'DEBUG: finish_addr=0x'
-dbg_finish_addr_val rb 16
-db 0xA, 0
-dbg_finish_addr_len = $ - dbg_finish_addr
-
-dbg_caller_rsp db 'DEBUG: caller_rsp=0x'
-dbg_caller_rsp_val rb 16
-db 0xA, 0
-dbg_caller_rsp_len = $ - dbg_caller_rsp
-
-dbg_stack_count db 'DEBUG: stack_count='
-dbg_stack_count_val rb 16
-db 0xA, 0
-dbg_stack_count_len = $ - dbg_stack_count
-
-dbg_rsp db 'DEBUG: rsp=0x'
-dbg_rsp_val rb 16
-db 0xA, 0
-dbg_rsp_len = $ - dbg_rsp
-
-dbg_stack_ptr db 'DEBUG: stack_ptr=0x'
-dbg_stack_ptr_val rb 16
-db 0xA, 0
-dbg_stack_ptr_len = $ - dbg_stack_ptr
 
 section '.text' executable
 
@@ -120,36 +67,6 @@ macro debug_print msg*, len* {
     pop rax
 }
 
-; Convert number to hex string
-macro print_hex_num num, buf {
-    push rax
-    push rcx
-    push rdx
-    push rdi
-    
-    mov rax, num
-    mov rdi, buf
-    mov rcx, 16
-@@:
-    rol rax, 4
-    mov dl, al
-    and dl, 0x0F
-    add dl, '0'
-    cmp dl, '9'
-    jbe @f
-    add dl, 7
-@@:
-    mov [rdi], dl
-    inc rdi
-    dec rcx
-    jnz @b
-    
-    pop rdi
-    pop rdx
-    pop rcx
-    pop rax
-}
-
 ; Export all required symbols
 public generator_init
 public generator_next
@@ -165,14 +82,6 @@ generator_init:
     debug_print dbg_init, dbg_init_len
     ; Store the generator stack pointer passed from C
     mov [generator_stack], rdi
-    
-    ; Print stack pointer for debugging
-    push rax
-    mov rax, rdi
-    print_hex_num rax, dbg_stack_ptr_val
-    debug_print dbg_stack_ptr, dbg_stack_ptr_len
-    pop rax
-    
     ret
 
 ; Start or resume a generator
@@ -183,145 +92,33 @@ generator_next:
     cmp byte [rdi + Generator.dead], 0
     jne .dead_generator
     
-    ; Save current context
-    push rbp
-    push rbx
-    push r12
-    push r13
-    push r14
-    push r15
-    
-    ; Save generator and argument
-    mov rbp, rdi    ; Save generator
-    mov rbx, rsi    ; Save argument
-    
-    ; Save caller's RSP for later return
-    mov rax, [generator_stack]
-    test rax, rax
-    jz .no_caller
-    
-    mov rcx, [rax + GeneratorStack.count]
-    test rcx, rcx
-    jz .no_caller
-    
-    dec rcx
-    mov rdx, [rax + GeneratorStack.items]
-    test rdx, rdx
-    jz .no_caller
-    
-    mov r8, [rdx + rcx*8]      ; Get caller generator
-    test r8, r8
-    jz .no_caller
-    
-    mov [r8 + Generator.rsp], rsp  ; Save caller's RSP
-.no_caller:
-    
     ; Check if generator is fresh
-    cmp byte [rbp + Generator.fresh], 0
+    cmp byte [rdi + Generator.fresh], 0
     jne .fresh_generator
     
-    ; Resume existing generator
-    mov rsp, [rbp + Generator.rsp]
-    mov rax, rbx    ; Return the argument
+    ; Resume existing generator - just return the argument
+    mov rax, rsi
     ret
     
 .fresh_generator:
-    debug_print dbg_fresh, dbg_fresh_len
-    
     ; Mark generator as not fresh
-    mov byte [rbp + Generator.fresh], 0
+    mov byte [rdi + Generator.fresh], 0
     
-    ; Set up new stack - be more careful with stack setup
-    mov rsp, [rbp + Generator.stack_base]
-    test rsp, rsp
-    jz .stack_error
+    ; Call the generator function
+    push rdi    ; Save generator
+    mov rdi, rsi    ; Pass argument
+    call [rdi + Generator.func]
+    pop rdi     ; Restore generator
     
-    ; Print stack base for debugging
-    push rax
-    mov rax, rsp
-    print_hex_num rax, dbg_stack_base_val
-    debug_print dbg_stack_base, dbg_stack_base_len
-    pop rax
-    
-    ; Add stack size with safety check
-    add rsp, 4096  ; Use a smaller stack size for safety
-    
-    ; Align stack to 16 bytes (required by System V ABI)
-    and rsp, ~15
-    
-    ; Save current RSP as the generator's RSP
-    mov [rbp + Generator.rsp], rsp
-    
-    ; Print function pointer for debugging
-    push rax
-    mov rax, [rbp + Generator.func]
-    print_hex_num rax, dbg_func_val
-    debug_print dbg_func, dbg_func_len
-    pop rax
-    
-    ; Check if function pointer is valid
-    cmp qword [rbp + Generator.func], 0
-    je .func_error
-    
-    ; Call the generator function with proper error handling
-    mov rdi, rbx    ; Pass argument
-    call [rbp + Generator.func]
-    
-    ; If we get here, the generator has finished normally
     ; Mark generator as dead
-    mov byte [rbp + Generator.dead], 1
-    
-    ; Return to caller safely
-    jmp .return_to_caller
-    
-.stack_error:
-    ; Print error message
-    debug_print dbg_stack_error, dbg_stack_error_len
-    jmp .return_to_caller
-    
-.func_error:
-    ; Print error message
-    debug_print dbg_func_error, dbg_func_error_len
-    jmp .return_to_caller
-
-.return_to_caller:
-    ; Get the generator stack
-    mov rax, [generator_stack]
-    test rax, rax
-    jz .no_stack
-    
-    ; Get the stack count
-    mov rcx, [rax + GeneratorStack.count]
-    test rcx, rcx
-    jz .no_caller_return
-    
-    ; Get the caller generator
-    dec rcx
-    mov rdx, [rax + GeneratorStack.items]
-    mov r8, [rdx + rcx*8]
-    test r8, r8
-    jz .no_caller_return
-    
-    ; Get the caller's RSP
-    mov rsp, [r8 + Generator.rsp]
-    test rsp, rsp
-    jz .no_caller_return
+    mov byte [rdi + Generator.dead], 1
     
     ; Return NULL
     xor rax, rax
-    
-    ; Restore registers
-    pop r15
-    pop r14
-    pop r13
-    pop r12
-    pop rbx
-    pop rbp
     ret
     
-.no_stack:
-.no_caller_return:
-    ; Emergency exit - just return NULL without changing stack
+.dead_generator:
+    ; Return NULL for dead generators
     xor rax, rax
     ret
 
@@ -329,137 +126,19 @@ generator_next:
 generator_yield:
     debug_print dbg_yield, dbg_yield_len
     
-    ; Save the yield value
-    mov rbx, rdi
-    
-    ; Save the stack pointer (passed as second argument)
-    mov r12, rsi
-    
-    ; Print stack pointer for debugging
-    push rax
-    mov rax, r12
-    print_hex_num rax, dbg_stack_ptr_val
-    debug_print dbg_stack_ptr, dbg_stack_ptr_len
-    pop rax
-    
-    ; Check if we have a valid stack
-    test r12, r12
-    jz .simple_return
-    
-    ; Print stack count for debugging
-    push rax
-    mov rax, [r12 + GeneratorStack.count]
-    print_hex_num rax, dbg_stack_count_val
-    debug_print dbg_stack_count, dbg_stack_count_len
-    pop rax
-    
-    ; Get the current generator's stack position
-    mov rcx, [r12 + GeneratorStack.count]
-    test rcx, rcx
-    jz .simple_return
-    
-    ; Save our current context
-    push rbp
-    push rbx
-    push r12
-    push r13
-    push r14
-    push r15
-    
-    ; Get the current generator
-    dec rcx
-    mov rdx, [r12 + GeneratorStack.items]
-    mov r8, [rdx + rcx*8]
-    test r8, r8
-    jz .no_generator
-    
-    ; Save our RSP in the current generator
-    mov [r8 + Generator.rsp], rsp
-    
-    ; Get the caller generator (if any)
-    test rcx, rcx
-    jz .no_caller
-    
-    dec rcx
-    mov r9, [rdx + rcx*8]
-    test r9, r9
-    jz .no_caller
-    
-    ; Switch to the caller's context
-    mov rsp, [r9 + Generator.rsp]
-    test rsp, rsp
-    jz .no_caller
-    
-    ; Return the yield value
-    mov rax, rbx
-    ret
-    
-.no_generator:
-.no_caller:
-    ; Restore our context
-    pop r15
-    pop r14
-    pop r13
-    pop r12
-    pop rbx
-    pop rbp
-    
-.simple_return:
-    ; Just return the yield value
-    mov rax, rbx
+    ; Just return the argument
+    mov rax, rdi
     ret
 
 ; Restore context (used internally)
 generator_restore_context:
-    mov rsp, rdi
-    pop r15
-    pop r14
-    pop r13
-    pop r12
-    pop rbx
-    pop rbp
+    ; Not used in this simplified implementation
     ret
 
 ; Restore context with return value
 generator_restore_context_with_return:
-    ; Check if the stack pointer is valid
-    test rdi, rdi
-    jz .invalid_stack
-    
-    ; Print debug info
-    push rax
-    mov rax, rdi
-    print_hex_num rax, dbg_rsp_val
-    debug_print dbg_rsp, dbg_rsp_len
-    pop rax
-    
-    ; Restore stack pointer and return value
-    mov rsp, rdi
-    mov rax, rsi
-    
-    ; Check if we have any saved registers
-    ; If the stack is too small, it might not have saved registers
-    mov rcx, rsp
-    add rcx, 56  ; 7 registers * 8 bytes
-    cmp rcx, [rsp]  ; Compare with the first value on stack
-    jae .no_saved_registers
-    
-    ; Restore registers
-    pop r15
-    pop r14
-    pop r13
-    pop r12
-    pop rbx
-    pop rbp
-    ret
-    
-.no_saved_registers:
-    ; Just return the value
-    ret
-    
-.invalid_stack:
-    ; Return the value without changing stack
-    mov rax, rsi
+    ; Not used in this simplified implementation
+    mov rax, rsi    ; Return the argument
     ret
 
 ; Switch context (used internally)
@@ -476,30 +155,7 @@ generator_return:
 generator__finish_current:
     debug_print dbg_finish, dbg_finish_len
     
-    ; Save the stack pointer (passed as first argument)
-    mov r12, rdi
-    
-    ; Print stack pointer for debugging
-    push rax
-    mov rax, r12
-    print_hex_num rax, dbg_stack_ptr_val
-    debug_print dbg_stack_ptr, dbg_stack_ptr_len
-    pop rax
-    
-    ; Check if we have a valid stack
-    test r12, r12
-    jz .simple_return
-    
-    ; Print stack count for debugging
-    push rax
-    mov rax, [r12 + GeneratorStack.count]
-    print_hex_num rax, dbg_stack_count_val
-    debug_print dbg_stack_count, dbg_stack_count_len
-    pop rax
-    
-    ; For simplicity, just return NULL
-    ; This is the safest approach given the stack management issues
-.simple_return:
+    ; Return NULL
     xor rax, rax
     ret
 

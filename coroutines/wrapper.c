@@ -17,10 +17,8 @@ Generator_Stack* generator_stack;
 
 extern void generator_init(Generator_Stack* stack);
 extern void* generator_next(void* g, void* arg);
-extern void generator_restore_context(void* context);
-extern void generator_restore_context_with_return(void* context, void* ret);
-extern void* generator_yield(void* arg, Generator_Stack* stack);
-extern void* generator__finish_current(Generator_Stack* stack);
+extern void* generator_yield(void* arg);
+extern void* generator__finish_current();
 
 // Export our functions with proper visibility
 __attribute__((visibility("default")))
@@ -33,7 +31,7 @@ void python_generator_init() {
     
     // Add initial generator (main context)
     void* main_gen = malloc(sizeof(void*) * 8);  // Simple structure for main context
-    memset(main_gen, 0, sizeof(void*) * 8);
+    memset(main_gen, 0, sizeof(*main_gen));
     stack->items[stack->count++] = main_gen;
     
     // Set the global stack pointer
@@ -48,12 +46,6 @@ void python_generator_init() {
 
 __attribute__((visibility("default")))
 void* python_generator_next(void* g, void* arg) {
-    // Check if we have a valid generator stack
-    if (!generator_stack) {
-        printf("ERROR: Generator stack is NULL\n");
-        return NULL;
-    }
-    
     // Push generator onto stack
     if (generator_stack->count >= generator_stack->capacity) {
         generator_stack->capacity *= 2;
@@ -64,9 +56,6 @@ void* python_generator_next(void* g, void* arg) {
     generator_stack->items[generator_stack->count++] = g;
     
     printf("DEBUG: python_generator_next - stack count: %zu\n", generator_stack->count);
-    
-    // Print generator info
-    printf("DEBUG: Generator at %p\n", g);
     
     // Call the assembly function
     void* result = generator_next(g, arg);
@@ -80,27 +69,11 @@ void* python_generator_next(void* g, void* arg) {
 }
 
 __attribute__((visibility("default")))
-void python_generator_restore_context(void* context) {
-    generator_restore_context(context);
-}
-
-__attribute__((visibility("default")))
-void python_generator_restore_context_with_return(void* context, void* ret) {
-    generator_restore_context_with_return(context, ret);
-}
-
-__attribute__((visibility("default")))
 void* python_generator_yield(void* arg) {
-    // Check if we have a valid generator stack
-    if (!generator_stack) {
-        printf("ERROR: Generator stack is NULL in yield\n");
-        return NULL;
-    }
+    printf("DEBUG: python_generator_yield called\n");
     
-    printf("DEBUG: python_generator_yield - stack count: %zu\n", generator_stack->count);
-    
-    // Call the assembly function with the stack pointer
-    void* result = generator_yield(arg, generator_stack);
+    // Call the assembly function
+    void* result = generator_yield(arg);
     
     return result;
 }

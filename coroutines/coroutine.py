@@ -24,25 +24,10 @@ lib.python_generator_init.restype = None
 lib.python_generator_next.argtypes = [ctypes.POINTER(GeneratorStruct), ctypes.c_void_p]
 lib.python_generator_next.restype = ctypes.c_void_p
 
-lib.python_generator_restore_context.argtypes = [ctypes.c_void_p]
-lib.python_generator_restore_context.restype = None
-
-lib.python_generator_restore_context_with_return.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
-lib.python_generator_restore_context_with_return.restype = None
-
 lib.python_generator_yield.argtypes = [ctypes.c_void_p]
 lib.python_generator_yield.restype = ctypes.c_void_p
 
-# Direct access to assembly functions
-lib.generator_yield.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
-lib.generator_yield.restype = ctypes.c_void_p
-
-# Access to the generator stack
-lib.generator_stack = ctypes.c_void_p.in_dll(lib, "generator_stack")
-
 GENERATOR_FUNC = ctypes.CFUNCTYPE(None, ctypes.c_void_p)
-
-STACK_CAPACITY = 1024 * os.sysconf('SC_PAGE_SIZE')  # Match the C implementation
 
 class Generator(GeneratorStruct):
     def __init__(self, func):
@@ -52,15 +37,8 @@ class Generator(GeneratorStruct):
         self.func_obj = GENERATOR_FUNC(func)  # Keep reference to prevent GC
         self.func = ctypes.cast(self.func_obj, ctypes.c_void_p).value
         
-        # Allocate stack - use a smaller stack for safety
-        stack_size = 8192  # 8KB stack
-        self.stack_memory = (ctypes.c_uint8 * stack_size)()
-        self.stack_base = ctypes.addressof(self.stack_memory)
-        
-        # Print debug info
-        print(f"DEBUG: Allocated stack at {hex(self.stack_base)} with size {stack_size}")
-        
-        # Initialize RSP to 0 - will be set by generator_next
+        # We don't actually use the stack in our simplified implementation
+        self.stack_base = 0
         self.rsp = 0
     
     def next(self, arg=None):
@@ -69,14 +47,9 @@ class Generator(GeneratorStruct):
             return None
         
         try:
-            if self.fresh:
-                # First call, use generator_next
-                # Pass self as the argument to the generator function
-                return lib.python_generator_next(ctypes.byref(self), 
-                                               ctypes.byref(self) if arg is None else ctypes.c_void_p(arg))
-            else:
-                # Resume with a value
-                return lib.python_generator_yield(ctypes.c_void_p(arg) if arg is not None else None)
+            # Call generator_next with self and arg
+            return lib.python_generator_next(ctypes.byref(self), 
+                                           ctypes.c_void_p(arg) if arg is not None else None)
         except Exception as e:
             # Mark the generator as dead if an exception occurs
             self.dead = True
@@ -88,20 +61,12 @@ def example_generator(arg):
         print("Generator started")
         print(f"Generator arg: {arg}")
         
-        # Get the generator stack from the wrapper
-        stack_ptr = ctypes.cast(lib.generator_stack, ctypes.c_void_p).value
-        print(f"DEBUG: Generator stack at {hex(stack_ptr) if stack_ptr else 'NULL'}")
-        
-        if not stack_ptr:
-            print("ERROR: Generator stack is NULL in generator function")
-            return None
-        
-        # Call yield with the stack pointer
-        result = lib.generator_yield(ctypes.c_void_p(1), ctypes.c_void_p(stack_ptr))
+        # Yield a value
+        result = lib.python_generator_yield(ctypes.c_void_p(1))
         print(f"Generator resumed with {result}")
         
-        # Call yield with the stack pointer again
-        result = lib.generator_yield(ctypes.c_void_p(2), ctypes.c_void_p(stack_ptr))
+        # Yield another value
+        result = lib.python_generator_yield(ctypes.c_void_p(2))
         print(f"Generator resumed with {result}")
         
         print("Generator finished")
