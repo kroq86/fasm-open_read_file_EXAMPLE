@@ -39,6 +39,19 @@ BUFFER_SMALL  equ 1024
 BUFFER_MEDIUM equ 4096
 BUFFER_LARGE  equ 8192
 
+; Constants for printing
+MAGIC_DIV_10_LOW  equ -3689348815    ; Lower 32 bits of magic number
+MAGIC_DIV_10_HIGH equ -1             ; Upper 32 bits of magic number
+PRINT_BUFFER_SIZE equ 48             ; Buffer size aligned to 16 bytes (40 rounded up)
+
+; Other constants
+NULL        equ 0
+TRUE        equ 1
+FALSE       equ 0
+NEWLINE     equ 0xA
+SPACE       equ 0x20
+NULL_TERM   equ 0
+
 ; Syscall macros with error checking
 macro syscall1_safe number, a
 {
@@ -257,13 +270,6 @@ struc buffer_info
     .used dd 0
 }
 
-; Useful constants
-NULL        equ 0
-TRUE        equ 1
-FALSE       equ 0
-NEWLINE     equ 0xA
-NULL_TERM   equ 0
-
 ; Register preservation
 macro preserve_regs
 {
@@ -299,103 +305,18 @@ macro program_init
     format ELF64 executable
     segment readable writeable
     segment readable executable
-    entry main
 }
 
 macro program_exit code
 {
-    syscall1 SYS_exit, code
-}
-
-; Optimized integer printing
-MAGIC_DIV_10 equ -3689348814741910323  ; Magic number for division by 10
-PRINT_BUFFER_SIZE equ 40               ; Standard buffer size for number printing
-
-; Print any 64-bit integer with newline
-print:
-    mov     r9, MAGIC_DIV_10           ; Load division constant
-    sub     rsp, PRINT_BUFFER_SIZE     ; Reserve buffer space
-    mov     BYTE [rsp+31], NEWLINE     ; Store newline at end
-    lea     rcx, [rsp+30]             ; Point to buffer end
-
-.convert_loop:
-    mov     rax, rdi                  ; Number to convert in RDI
-    lea     r8, [rsp+32]             ; End of buffer pointer
-    mul     r9                       ; Optimized division by 10
-    mov     rax, rdi
-    sub     r8, rcx                  ; Calculate length
-    shr     rdx, 3                   ; Quick divide by 8
-    lea     rsi, [rdx+rdx*4]         ; Multiply by 5
-    add     rsi, rsi                 ; Multiply by 2 (total *10)
-    sub     rax, rsi                 ; Get remainder
-    add     eax, 48                  ; Convert to ASCII
-    mov     BYTE [rcx], al           ; Store digit
-    mov     rax, rdi                 ; Preserve number
-    mov     rdi, rdx                 ; Move quotient for next iteration
-    mov     rdx, rcx                 ; Save current position
-    sub     rcx, 1                   ; Move buffer pointer
-    cmp     rax, 9                   ; Check if more digits
-    ja      .convert_loop            ; Continue if number > 9
-
-    lea     rax, [rsp+32]            ; Calculate string length
-    mov     edi, STDOUT              ; Use stdout
-    sub     rdx, rax                 ; Calculate length
-    xor     eax, eax                 ; Clear RAX
-    lea     rsi, [rsp+32+rdx]        ; Point to start of number
-    mov     rdx, r8                  ; Length to write
-    mov     rax, SYS_write           ; System call number
-    syscall                          ; Write number
-    add     rsp, PRINT_BUFFER_SIZE   ; Restore stack
-    ret
-
-; Print number without newline
-print_no_nl:
-    mov     r9, MAGIC_DIV_10         ; Load division constant
-    sub     rsp, PRINT_BUFFER_SIZE   ; Reserve buffer space
-    lea     rcx, [rsp+31]           ; Point to buffer end (no newline)
-
-.convert_loop:
-    mov     rax, rdi                ; Number to convert
-    lea     r8, [rsp+32]           ; End pointer
-    mul     r9                     ; Divide by 10
-    mov     rax, rdi
-    sub     r8, rcx                ; Length
-    shr     rdx, 3                 ; Quick divide
-    lea     rsi, [rdx+rdx*4]       ; Times 10
-    add     rsi, rsi
-    sub     rax, rsi               ; Remainder
-    add     eax, 48                ; To ASCII
-    mov     BYTE [rcx], al         ; Store
-    mov     rax, rdi               ; Save
-    mov     rdi, rdx               ; Next
-    mov     rdx, rcx               ; Position
-    sub     rcx, 1                 ; Move
-    cmp     rax, 9                 ; More?
-    ja      .convert_loop          ; Continue
-
-    lea     rax, [rsp+32]          ; Length calc
-    mov     edi, STDOUT            ; Output
-    sub     rdx, rax               ; Length
-    xor     eax, eax               ; Clear
-    lea     rsi, [rsp+32+rdx]      ; Buffer
-    mov     rdx, r8                ; Count
-    mov     rax, SYS_write         ; Write
+    mov rax, SYS_exit
+    mov rdi, code
     syscall
-    add     rsp, PRINT_BUFFER_SIZE ; Cleanup
-    ret
-
-; Print space-separated numbers
-macro print_numbers [num1, num2] {
-    mov rdi, num1
-    call print_no_nl
-    mov rdi, SPACE
-    call print_char
-    mov rdi, num2
-    call print
 }
 
 ; Print array of numbers
 macro print_array array, count {
+    local .print_loop    ; Make the label local to this macro instance
     mov rbx, array        ; Array pointer
     mov rcx, count        ; Counter
 .print_loop:
@@ -412,4 +333,14 @@ macro print_array array, count {
     jnz .print_loop     ; Continue if not done
     mov rdi, NEWLINE    ; Print final newline
     call print_char
+}
+
+; Print space-separated numbers
+macro print_numbers [num1, num2] {
+    mov rdi, num1
+    call print_no_nl
+    mov rdi, SPACE
+    call print_char
+    mov rdi, num2
+    call print
 } 
