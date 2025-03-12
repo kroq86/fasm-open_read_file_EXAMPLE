@@ -57,18 +57,39 @@ A comprehensive collection of FASM (Flat Assembler) examples, utilities, and lea
    sudo pacman -S fasm
    ```
 
-2. Build an example:
+2. Build a basic example:
    ```bash
-   cd examples/basics/hello
-   fasm hello.asm
-   ./hello
+   # File reading example
+   fasm mycat.asm
+   chmod +x mycat
+   ./mycat
+   
+   # Or try fibonacci calculator
+   fasm fib.asm
+   chmod +x fib
+   ./fib
    ```
 
 ## Documentation
 
-- [AI FASM Rules](docs/AI_FASM_RULES.md) - Guidelines for AI-assisted FASM programming
-- [FASM Reference](docs/FASM_REFERENCE.md) - Comprehensive FASM reference guide
-- [Examples Documentation](docs/examples/) - Detailed documentation for each example
+- [AI FASM Rules](AI_FASM_RULES.md) - Guidelines for AI-assisted FASM programming
+- [FASM Reference Guide](FASM_REFERENCE_GUIDE.md) - Comprehensive FASM reference guide
+
+## Example Categories
+
+### Basic Examples
+- `mycat.asm` - File reading and writing
+- `arg.asm` - Command line argument handling
+- `fib.asm` - Fibonacci sequence calculator
+- `two_sum.asm` - Two sum algorithm implementation
+- `file_ops.asm` - Advanced file operations
+
+### Advanced Examples
+Each advanced example includes its own README with build and usage instructions:
+- [Addition Operations](add/readme.md) - FASM with Python/C integration
+- [Binary Search](binary_search/readme.md) - Search implementation with wrappers
+- [Coroutines](coroutines/readme.md) - Assembly coroutines with Python
+- [Vector Operations](vec/readme.md) - SIMD/Vector processing examples
 
 ## Contributing
 
