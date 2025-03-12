@@ -85,11 +85,12 @@ void* python_generator_next(void* g, void* arg) {
 
 __attribute__((visibility("default")))
 void* python_generator_yield(void* arg) {
-    printf("DEBUG: python_generator_yield called\n");
+    printf("DEBUG: python_generator_yield called with arg: %p\n", arg);
     
     // Call the assembly function
     void* result = generator_yield(arg);
     
+    printf("DEBUG: python_generator_yield returning: %p\n", result);
     return result;
 }
 

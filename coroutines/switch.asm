@@ -139,6 +139,11 @@ generator_next:
     xor rax, rax
     ret
 
+.dead_generator:
+    ; Return NULL for dead generators
+    xor rax, rax
+    ret
+
 ; Yield a value from a generator
 generator_yield:
     debug_print dbg_yield, dbg_yield_len
@@ -173,11 +178,6 @@ generator__finish_current:
     debug_print dbg_finish, dbg_finish_len
     
     ; Return NULL
-    xor rax, rax
-    ret
-
-.dead_generator:
-    ; Return NULL for dead generators
     xor rax, rax
     ret
 
