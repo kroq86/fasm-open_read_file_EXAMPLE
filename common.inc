@@ -34,10 +34,10 @@ EXIT_SUCCESS equ 0
 EXIT_FAILURE equ 1
 
 ; Common buffer sizes
-BUFFER_TINY   equ 128
-BUFFER_SMALL  equ 1024
-BUFFER_MEDIUM equ 4096
-BUFFER_LARGE  equ 8192
+BUFFER_TINY   equ 32     ; For small strings/numbers
+BUFFER_SMALL  equ 1024   ; Standard buffer
+BUFFER_MEDIUM equ 4096   ; Page size
+BUFFER_LARGE  equ 8192   ; Large operations
 
 ; Constants for printing
 MAGIC_DIV_10_LOW  equ -3689348815    ; Lower 32 bits of magic number
@@ -247,7 +247,6 @@ macro stack_frame_create size
 {
     push rbp
     mov rbp, rsp
-    sub rsp, size
 }
 
 macro stack_frame_destroy
@@ -343,4 +342,102 @@ macro print_numbers [num1, num2] {
     call print_char
     mov rdi, num2
     call print
-} 
+}
+
+; Array operation macros
+macro array_element array, index, size {
+    array + (index * size)
+}
+
+macro array_bounds_check index, max {
+    cmp index, max
+    jae error_handler
+}
+
+macro swap_elements array, i, j, size {
+    push rax
+    mov rax, [array + i*size]
+    xchg rax, [array + j*size]
+    mov [array + i*size], rax
+    pop rax
+}
+
+; Number formatting macros
+macro init_number_buffer buffer, size {
+    mov byte [buffer + size - 1], 0   ; Null terminator
+    mov byte [buffer + size - 2], ' ' ; Space
+    lea rbx, [buffer + size - 3]      ; Start position
+}
+
+macro convert_number_to_string {
+    xor rdx, rdx
+    div r12            ; Divide by base
+    add dl, '0'        ; Convert to ASCII
+    mov [rbx], dl      ; Store digit
+    dec rbx
+}
+
+; String output macros
+macro print_with_newline str, len {
+    mov rdi, str
+    mov rsi, len
+    call print_string
+    mov rdi, newline
+    mov rsi, 1
+    call print_string
+}
+
+; Common error handling
+macro check_syscall {
+    test rax, rax
+    js error_handler
+}
+
+; Stack frame macros
+macro setup_frame {
+    push rbp
+    mov rbp, rsp
+    ; Align stack if needed
+    and rsp, -16
+}
+
+macro restore_frame {
+    mov rsp, rbp
+    pop rbp
+}
+
+; Common utility functions
+print_string:
+    push rbp
+    push rbx
+    mov rbp, rsp
+    
+    mov rdx, rsi        ; length
+    mov rsi, rdi        ; string
+    mov rdi, STDOUT     ; file descriptor
+    mov rax, SYS_write  ; syscall number
+    syscall
+    check_syscall
+    
+    mov rsp, rbp
+    pop rbx
+    pop rbp
+    ret
+
+error_handler:
+    ; Print error message if provided
+    test rdi, rdi
+    jz .exit
+    mov rsi, rdx        ; error message length
+    call print_string
+.exit:
+    mov rdi, EXIT_FAILURE
+    mov rax, SYS_exit
+    syscall
+
+; Common data section
+segment readable writeable
+    newline db 0xA
+    space db ' '
+    error_prefix db 'Error: ', 0
+    error_suffix db 0xA, 0 

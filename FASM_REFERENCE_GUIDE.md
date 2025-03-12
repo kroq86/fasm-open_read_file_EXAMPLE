@@ -631,4 +631,266 @@ syscall3 SYS_write, STDOUT, buffer, length
 4. Optimization:
    - Efficient register usage
    - Minimal memory access
-   - Smart arithmetic (shift vs divide) 
+   - Smart arithmetic (shift vs divide)
+
+## Array Operations
+
+### Array Access Patterns
+```nasm
+; Direct array access
+mov rax, [array + index*8]    ; 64-bit elements
+mov eax, [array + index*4]    ; 32-bit elements
+mov ax, [array + index*2]     ; 16-bit elements
+mov al, [array + index]       ; 8-bit elements
+
+; Using array_element macro
+mov rax, [array_element array, index, 8]
+```
+
+### Array Iteration
+```nasm
+; Forward iteration
+xor rcx, rcx                  ; Initialize counter
+.loop:
+    mov rax, [array + rcx*8]  ; Access element
+    inc rcx                   ; Next element
+    cmp rcx, length          ; Check bounds
+    jb .loop                 ; Continue if below length
+
+; Reverse iteration
+mov rcx, length              ; Start from end
+.loop:
+    dec rcx                  ; Previous element
+    mov rax, [array + rcx*8] ; Access element
+    test rcx, rcx           ; Check if reached start
+    jnz .loop               ; Continue if not zero
+```
+
+## Sorting Algorithms
+
+### Quicksort Implementation
+```nasm
+quicksort:
+    ; Function prologue
+    push rbp
+    mov rbp, rsp
+    push rbx                ; Preserve registers
+    push r12
+    push r13
+    push r14
+    push r15
+
+    ; Parameters:
+    ; rdi = array base address
+    ; rsi = low index
+    ; rdx = high index
+
+    ; Check if partition size > 1
+    cmp rsi, rdx
+    jge .done
+
+    ; Save parameters
+    mov r12, rdi           ; array
+    mov r13, rsi           ; low
+    mov r14, rdx           ; high
+
+    ; Call partition function
+    call partition
+    mov r15, rax           ; Save pivot index
+
+    ; Recursively sort left partition
+    mov rdi, r12           ; array
+    mov rsi, r13           ; low
+    lea rdx, [r15-1]       ; pivot-1
+    call quicksort
+
+    ; Recursively sort right partition
+    mov rdi, r12           ; array
+    lea rsi, [r15+1]       ; pivot+1
+    mov rdx, r14           ; high
+    call quicksort
+
+.done:
+    ; Function epilogue
+    pop r15
+    pop r14
+    pop r13
+    pop r12
+    pop rbx
+    mov rsp, rbp
+    pop rbp
+    ret
+```
+
+### Partition Function
+```nasm
+partition:
+    ; Function prologue
+    push rbp
+    mov rbp, rsp
+
+    ; Parameters:
+    ; rdi = array base address
+    ; rsi = low index
+    ; rdx = high index
+
+    ; Use last element as pivot
+    mov rcx, [rdi + rdx*8] ; pivot value
+    mov r8, rsi            ; i = low - 1
+    dec r8
+
+    ; Iterate through partition
+    mov r9, rsi            ; j = low
+.loop:
+    cmp r9, rdx            ; while j < high
+    jge .done
+
+    ; Compare current element with pivot
+    mov rax, [rdi + r9*8]
+    cmp rax, rcx
+    jg .next
+
+    ; If element <= pivot, swap
+    inc r8                 ; i++
+    push rax
+    mov rax, [rdi + r8*8]
+    xchg rax, [rdi + r9*8]
+    mov [rdi + r8*8], rax
+    pop rax
+
+.next:
+    inc r9                 ; j++
+    jmp .loop
+
+.done:
+    ; Place pivot in final position
+    inc r8
+    mov rax, [rdi + r8*8]
+    xchg rax, [rdi + rdx*8]
+    mov [rdi + r8*8], rax
+
+    ; Return pivot index
+    mov rax, r8
+
+    ; Function epilogue
+    mov rsp, rbp
+    pop rbp
+    ret
+```
+
+## Number Formatting
+
+### Integer to String Conversion
+```nasm
+; Convert number in rax to string
+; Buffer address in rdi
+; Returns string length in rcx
+convert_number:
+    push rbp
+    mov rbp, rsp
+    push rbx
+    push r12
+
+    mov r12, 10           ; Base 10
+    lea rbx, [rdi + 31]   ; End of buffer
+    mov byte [rbx], 0     ; Null terminator
+    dec rbx
+
+    ; Handle zero case
+    test rax, rax
+    jnz .convert
+    mov byte [rbx], '0'
+    dec rbx
+    jmp .done
+
+.convert:
+    ; Handle negative numbers
+    test rax, rax
+    jns .positive
+    neg rax
+    push rax
+    mov byte [rdi], '-'
+    pop rax
+
+.positive:
+    ; Convert digits
+.loop:
+    xor rdx, rdx
+    div r12              ; rax = quotient, rdx = remainder
+    add dl, '0'          ; Convert to ASCII
+    mov [rbx], dl        ; Store digit
+    dec rbx
+    test rax, rax
+    jnz .loop
+
+.done:
+    ; Calculate length
+    lea rcx, [rdi + 31]
+    sub rcx, rbx
+    inc rbx              ; Point to first digit
+    mov rsi, rbx         ; Save start address
+
+    pop r12
+    pop rbx
+    mov rsp, rbp
+    pop rbp
+    ret
+```
+
+## Register Usage Guidelines
+
+### Register Preservation
+- Caller-saved: RAX, RCX, RDX, R8-R11
+- Callee-saved: RBX, RBP, RSP, R12-R15
+- Parameter passing: RDI, RSI, RDX, RCX, R8, R9
+
+### Register Allocation in Recursive Functions
+1. Save callee-saved registers in prologue
+2. Use caller-saved registers for temporary values
+3. Pass parameters in standard registers
+4. Restore registers in reverse order in epilogue
+
+## Error Handling
+
+### System Call Error Checking
+```nasm
+; Check syscall result
+test rax, rax
+js error_handler         ; Jump if sign flag set (negative result)
+
+; Error handler
+error_handler:
+    neg rax             ; Get positive error code
+    ; Handle specific error codes
+    cmp rax, EINVAL
+    je .invalid_argument
+    cmp rax, EACCES
+    je .permission_denied
+    ; Default error
+    jmp .unknown_error
+```
+
+## Memory Safety
+
+### Stack Alignment
+```nasm
+; Proper stack alignment (16-byte)
+push rbp
+mov rbp, rsp
+and rsp, -16            ; Align stack
+sub rsp, 32             ; Allocate aligned buffer
+
+; Restore stack
+mov rsp, rbp
+pop rbp
+```
+
+### Buffer Operations
+```nasm
+; Safe string copy with bounds checking
+mov rcx, dst_size       ; Maximum size
+lea rdi, [dst]          ; Destination
+lea rsi, [src]          ; Source
+rep movsb              ; Copy bytes
+mov byte [rdi-1], 0    ; Ensure null termination
+``` 
