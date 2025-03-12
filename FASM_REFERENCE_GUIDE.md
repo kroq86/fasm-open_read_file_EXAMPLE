@@ -893,4 +893,310 @@ lea rdi, [dst]          ; Destination
 lea rsi, [src]          ; Source
 rep movsb              ; Copy bytes
 mov byte [rdi-1], 0    ; Ensure null termination
+```
+
+## 1. Common Include Integration
+
+### 1.1 Standard Symbols
+```nasm
+; System calls from common.inc
+SYS_write  ; Write to file descriptor
+SYS_exit   ; Exit program
+
+; File descriptors
+STDOUT     ; Standard output (1)
+STDERR     ; Standard error (2)
+
+; Exit codes
+EXIT_SUCCESS  ; Successful exit (0)
+EXIT_FAILURE  ; Error exit (1)
+
+; Common constants
+SPACE      ; Space character
+NEWLINE    ; Newline character
+```
+
+### 1.2 Common Functions
+```nasm
+; String output
+print_string:    ; (rdi = string, rsi = length)
+syscall3_safe:   ; Safe syscall wrapper
+```
+
+## 2. Recursive Algorithm Patterns
+
+### 2.1 Quicksort Implementation
+```nasm
+quicksort:
+    ; Register preservation
+    push rbp
+    push rbx
+    push r12-r14
+    mov rbp, rsp
+
+    ; Parameters:
+    ; rdi = array base
+    ; rsi = low index
+    ; rdx = high index
+
+    ; Base case
+    cmp rsi, rdx
+    jge .done
+
+    ; Save parameters
+    mov r12, rdi    ; array
+    mov r13, rsi    ; low
+    mov r14, rdx    ; high
+
+    ; Partition and recurse
+    call partition
+    mov rbx, rax    ; pivot
+
+    ; Sort left partition
+    mov rdi, r12
+    mov rsi, r13
+    lea rdx, [rbx-1]
+    call quicksort
+
+    ; Sort right partition
+    mov rdi, r12
+    lea rsi, [rbx+1]
+    mov rdx, r14
+    call quicksort
+
+.done:
+    mov rsp, rbp
+    pop r14-r12
+    pop rbx
+    pop rbp
+    ret
+```
+
+### 2.2 Partition Function Pattern
+```nasm
+partition:
+    ; Register preservation
+    push rbp
+    push rbx
+    push r12-r15
+    mov rbp, rsp
+
+    ; Save parameters
+    mov r12, rdi    ; array
+    mov r13, rsi    ; low
+    mov r14, rdx    ; high
+
+    ; Get pivot
+    mov rax, [r12 + r14*8]
+    mov r15, rax    ; pivot value
+
+    ; Initialize indices
+    mov rbx, r13
+    dec rbx         ; i = low - 1
+
+    ; Partition loop
+    mov r13, rsi    ; j = low
+.loop:
+    cmp r13, r14
+    jge .done
+
+    ; Compare with pivot
+    mov rax, [r12 + r13*8]
+    cmp rax, r15
+    jg .continue
+
+    ; Swap elements
+    inc rbx
+    mov rax, [r12 + rbx*8]
+    xchg rax, [r12 + r13*8]
+    mov [r12 + rbx*8], rax
+
+.continue:
+    inc r13
+    jmp .loop
+
+.done:
+    ; Place pivot
+    inc rbx
+    mov rax, [r12 + rbx*8]
+    xchg rax, [r12 + r14*8]
+    mov [r12 + rbx*8], rax
+
+    mov rax, rbx    ; Return pivot index
+    
+    mov rsp, rbp
+    pop r15-r12
+    pop rbx
+    pop rbp
+    ret
+```
+
+## 3. Number Formatting Patterns
+
+### 3.1 Integer to String
+```nasm
+print_number:
+    push rbp
+    push rbx
+    push r12
+    mov rbp, rsp
+
+    mov rax, rdi        ; number to print
+    mov r12, 10         ; base 10
+    mov rbx, buffer
+    add rbx, 31         ; end of buffer
+    mov byte [rbx], 0   ; null terminator
+    dec rbx
+    mov byte [rbx], SPACE
+    dec rbx
+
+.convert:
+    xor rdx, rdx
+    div r12            ; divide by 10
+    add dl, '0'        ; to ASCII
+    mov [rbx], dl      ; store digit
+    dec rbx
+    test rax, rax
+    jnz .convert
+
+    ; Print result
+    inc rbx
+    mov rdi, rbx
+    mov rsi, buffer
+    add rsi, 31
+    sub rsi, rbx
+    call print_string
+
+    mov rsp, rbp
+    pop r12
+    pop rbx
+    pop rbp
+    ret
+```
+
+## 4. Array Operation Patterns
+
+### 4.1 Array Printing
+```nasm
+print_array:
+    push rbp
+    push rbx
+    push r12-r13
+    mov rbp, rsp
+
+    mov r12, rdi    ; array
+    mov r13, rsi    ; size
+
+    xor rbx, rbx    ; counter
+.loop:
+    cmp rbx, r13
+    jge .done
+
+    mov rdi, [r12 + rbx*8]
+    call print_number
+
+    inc rbx
+    jmp .loop
+
+.done:
+    mov rsp, rbp
+    pop r13-r12
+    pop rbx
+    pop rbp
+    ret
+```
+
+### 4.2 Array Element Swapping
+```nasm
+; Swap array elements at indices i and j
+; rdi = array, rsi = i, rdx = j
+swap_elements:
+    push rax
+    mov rax, [rdi + rsi*8]
+    xchg rax, [rdi + rdx*8]
+    mov [rdi + rsi*8], rax
+    pop rax
+    ret
+```
+
+## 5. Best Practices
+
+### 5.1 Register Usage in Recursive Functions
+- Save callee-saved registers (rbx, r12-r15)
+- Use r12-r15 for preserving parameters
+- Use rax, rcx, rdx for temporary values
+- Restore registers in reverse order
+
+### 5.2 Error Handling
+```nasm
+; Check array bounds
+cmp rsi, array_size
+jae error_handler
+
+; Check buffer space
+lea rax, [rdi + rcx]
+cmp rax, buffer_end
+ja error_handler
+
+; Handle errors
+error_handler:
+    mov rdi, error_msg
+    mov rsi, error_len
+    call print_string
+    mov rdi, EXIT_FAILURE
+    call exit
+```
+
+### 5.3 Buffer Management
+```nasm
+; Safe buffer allocation
+buffer_size equ 32
+buffer rb buffer_size
+
+; Buffer position tracking
+lea rbx, [buffer + buffer_size - 1]
+mov byte [rbx], 0    ; null terminator
+```
+
+## 6. Common Patterns
+
+### 6.1 Program Structure
+```nasm
+format ELF64 executable
+include 'common.inc'
+
+segment readable writeable
+    ; Data declarations
+    msg db 'Hello', 0
+    msg_len = $ - msg
+
+segment readable executable
+entry main
+
+main:
+    ; Program logic
+    mov rdi, msg
+    mov rsi, msg_len
+    call print_string
+
+    mov rax, SYS_exit
+    mov rdi, EXIT_SUCCESS
+    syscall
+```
+
+### 6.2 Function Template
+```nasm
+function_name:
+    push rbp
+    push rbx        ; if used
+    push r12-r15    ; if used
+    mov rbp, rsp
+
+    ; Function body
+
+    mov rsp, rbp
+    pop r15-r12     ; if used
+    pop rbx         ; if used
+    pop rbp
+    ret
 ``` 

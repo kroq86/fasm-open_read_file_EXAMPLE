@@ -812,3 +812,202 @@ function1:
 string_func:
 array_func:
 helper: 
+```
+
+## 1. Symbol Conflict Prevention Rules
+
+### 1.1 Common Include Files
+ALWAYS check for symbol conflicts with common.inc:
+```nasm
+; DON'T redefine these symbols (they're in common.inc):
+; - System calls (SYS_*)
+; - File descriptors (STDOUT, STDIN, etc.)
+; - Exit codes (EXIT_SUCCESS, EXIT_FAILURE)
+; - Common constants (SPACE, NEWLINE)
+; - Common functions (print_string, etc.)
+```
+
+### 1.2 Symbol Naming
+ALWAYS use unique prefixes for local symbols:
+```nasm
+; CORRECT - Unique prefixes
+msg_program_name db 'MyProgram', 0
+array_buffer rb 1024
+number_temp dq 0
+
+; WRONG - Generic names that might conflict
+msg db 'MyProgram', 0    ; Too generic
+buffer rb 1024           ; Could conflict
+temp dq 0               ; Too generic
+```
+
+### 1.3 Function Naming
+ALWAYS use descriptive, specific names:
+```nasm
+; CORRECT - Specific function names
+print_array_numbers:     ; Clear purpose
+convert_number_decimal:  ; Specific conversion
+
+; WRONG - Generic names that might conflict
+print:                  ; Too generic
+convert:                ; Too vague
+```
+
+## 2. Array Handling Rules
+
+### 2.1 Array Declarations
+ALWAYS declare size constants and use proper alignment:
+```nasm
+ARRAY_SIZE equ 10              ; Size constant
+array dq 64, 34, 25, 12       ; Aligned data
+array_buffer rb ARRAY_SIZE * 8 ; Aligned buffer
+```
+
+### 2.2 Array Access
+ALWAYS use proper indexing and bounds checking:
+```nasm
+; Check bounds before access
+cmp rsi, ARRAY_SIZE
+jae error_handler
+
+; Use correct scaling
+mov rax, [array + rsi*8]  ; For qwords
+mov eax, [array + rsi*4]  ; For dwords
+```
+
+### 2.3 Array Parameters
+ALWAYS pass array parameters consistently:
+```nasm
+; Standard parameter order:
+; rdi = array base address
+; rsi = array size or low index
+; rdx = high index (for range operations)
+```
+
+## 3. Recursive Function Rules
+
+### 3.1 Register Preservation
+ALWAYS preserve registers in recursive functions:
+```nasm
+recursive_function:
+    push rbp
+    push rbx
+    push r12-r15    ; Save all used registers
+    mov rbp, rsp
+
+    ; Function body
+
+    mov rsp, rbp
+    pop r15-r12     ; Restore in reverse order
+    pop rbx
+    pop rbp
+    ret
+```
+
+### 3.2 Parameter Handling
+ALWAYS save parameters before recursive calls:
+```nasm
+    mov r12, rdi    ; Save array pointer
+    mov r13, rsi    ; Save low index
+    mov r14, rdx    ; Save high index
+
+    call recursive_function  ; Recursive call
+
+    mov rdi, r12    ; Restore parameters
+    mov rsi, r13
+    mov rdx, r14
+```
+
+## 4. Number Formatting Rules
+
+### 4.1 Buffer Management
+ALWAYS use safe buffer practices:
+```nasm
+number_buffer rb 32        ; Sufficient size for 64-bit
+add rbx, 31               ; Start from end
+mov byte [rbx], 0         ; Null terminator
+mov byte [rbx-1], SPACE   ; Use constants from common.inc
+```
+
+### 4.2 Number Conversion
+ALWAYS handle special cases:
+```nasm
+    test rax, rax
+    jz .zero_case     ; Handle zero
+    js .negative      ; Handle negative
+```
+
+## 5. Common Include Usage Rules
+
+### 5.1 Include Order
+ALWAYS include common files first:
+```nasm
+format ELF64 executable
+include 'common.inc'      ; First include
+; ... other includes if needed
+```
+
+### 5.2 Using Common Functions
+ALWAYS use common functions when available:
+```nasm
+; Use these from common.inc:
+call print_string         ; For string output
+syscall3_safe SYS_write  ; For safe syscalls
+```
+
+### 5.3 Constants Usage
+ALWAYS use common constants:
+```nasm
+mov rdi, STDOUT          ; Use standard FD
+mov rdi, EXIT_SUCCESS    ; Use exit codes
+mov byte [rbx], NEWLINE  ; Use character constants
+```
+
+## 6. Error Handling Rules
+
+### 6.1 Array Bounds
+ALWAYS check array bounds:
+```nasm
+    cmp rsi, ARRAY_SIZE
+    jae .error_handler
+    
+.error_handler:
+    mov rdi, error_msg
+    call print_string
+    jmp exit_error
+```
+
+### 6.2 Buffer Overflow Prevention
+ALWAYS validate buffer sizes:
+```nasm
+    lea rax, [rbx + 1]   ; Calculate needed space
+    cmp rax, buffer_size
+    ja .error_handler
+```
+
+## 7. Documentation Rules
+
+### 7.1 Function Headers
+ALWAYS document parameters and effects:
+```nasm
+; Function: sort_array
+; Input:   rdi = array pointer
+;          rsi = array size
+; Output:  sorted array in-place
+; Affects: rax, rbx, rcx, rdx
+```
+
+### 7.2 Complex Algorithms
+ALWAYS document key steps:
+```nasm
+quicksort:
+    ; 1. Base case check
+    cmp rsi, rdx
+    jge .done
+
+    ; 2. Partition array
+    call partition
+
+    ; 3. Recursive sort left partition
+    ; ... comments explaining the logic
+```
