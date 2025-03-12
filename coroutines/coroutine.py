@@ -52,11 +52,16 @@ class Generator(GeneratorStruct):
         self.func_obj = GENERATOR_FUNC(func)  # Keep reference to prevent GC
         self.func = ctypes.cast(self.func_obj, ctypes.c_void_p).value
         
-        # Allocate stack
-        self.stack_memory = (ctypes.c_uint8 * STACK_CAPACITY)()
+        # Allocate stack - use a smaller stack for safety
+        stack_size = 8192  # 8KB stack
+        self.stack_memory = (ctypes.c_uint8 * stack_size)()
         self.stack_base = ctypes.addressof(self.stack_memory)
-        self.rsp = self.stack_base + STACK_CAPACITY - 16
-        self.rsp = self.rsp - (self.rsp % 16)  # 16-byte alignment
+        
+        # Print debug info
+        print(f"DEBUG: Allocated stack at {hex(self.stack_base)} with size {stack_size}")
+        
+        # Initialize RSP to 0 - will be set by generator_next
+        self.rsp = 0
     
     def next(self, arg=None):
         """Send a value to the generator and get the next yielded value."""
@@ -81,8 +86,15 @@ class Generator(GeneratorStruct):
 def example_generator(arg):
     try:
         print("Generator started")
+        print(f"Generator arg: {arg}")
+        
         # Get the generator stack from the wrapper
         stack_ptr = ctypes.cast(lib.generator_stack, ctypes.c_void_p).value
+        print(f"DEBUG: Generator stack at {hex(stack_ptr) if stack_ptr else 'NULL'}")
+        
+        if not stack_ptr:
+            print("ERROR: Generator stack is NULL in generator function")
+            return None
         
         # Call yield with the stack pointer
         result = lib.generator_yield(ctypes.c_void_p(1), ctypes.c_void_p(stack_ptr))
@@ -98,9 +110,13 @@ def example_generator(arg):
         print(f"Exception in generator function: {e}")
     finally:
         # Mark the generator as dead
-        gen = ctypes.cast(arg, ctypes.POINTER(GeneratorStruct))
-        if gen:
-            gen.contents.dead = True
+        if arg:
+            try:
+                gen = ctypes.cast(arg, ctypes.POINTER(GeneratorStruct))
+                if gen:
+                    gen.contents.dead = True
+            except Exception as e:
+                print(f"Error marking generator as dead: {e}")
 
 # Initialize the generator system
 lib.python_generator_init()
@@ -110,19 +126,22 @@ gen = Generator(example_generator)
 
 # Start generator
 print("Starting generator")
-result = gen.next(None)
-print(f"Main got {result}")
+try:
+    result = gen.next(None)
+    print(f"Main got {result}")
 
-# Resume generator twice
-print("Resuming generator")
-result = gen.next(42)
-print(f"Main got {result}")
+    # Resume generator twice
+    print("Resuming generator")
+    result = gen.next(42)
+    print(f"Main got {result}")
 
-print("Resuming generator again")
-result = gen.next(84)
-print(f"Main got {result}")
+    print("Resuming generator again")
+    result = gen.next(84)
+    print(f"Main got {result}")
 
-# One more call should return None since generator is finished
-print("Final call")
-result = gen.next(0)
-print(f"Main got {result}")
+    # One more call should return None since generator is finished
+    print("Final call")
+    result = gen.next(0)
+    print(f"Main got {result}")
+except Exception as e:
+    print(f"Error in main: {e}")

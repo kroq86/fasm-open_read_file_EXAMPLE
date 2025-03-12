@@ -54,6 +54,12 @@ dbg_return_len = $ - dbg_return
 dbg_finish db 'DEBUG: generator finished', 0xA, 0
 dbg_finish_len = $ - dbg_finish
 
+dbg_stack_error db 'ERROR: Invalid stack base pointer', 0xA, 0
+dbg_stack_error_len = $ - dbg_stack_error
+
+dbg_func_error db 'ERROR: Invalid function pointer', 0xA, 0
+dbg_func_error_len = $ - dbg_func_error
+
 dbg_stack_base db 'DEBUG: stack_base=0x'
 dbg_stack_base_val rb 16
 db 0xA, 0
@@ -191,12 +197,22 @@ generator_next:
     
     ; Save caller's RSP for later return
     mov rax, [generator_stack]
+    test rax, rax
+    jz .no_caller
+    
     mov rcx, [rax + GeneratorStack.count]
     test rcx, rcx
     jz .no_caller
+    
     dec rcx
     mov rdx, [rax + GeneratorStack.items]
+    test rdx, rdx
+    jz .no_caller
+    
     mov r8, [rdx + rcx*8]      ; Get caller generator
+    test r8, r8
+    jz .no_caller
+    
     mov [r8 + Generator.rsp], rsp  ; Save caller's RSP
 .no_caller:
     
@@ -215,34 +231,58 @@ generator_next:
     ; Mark generator as not fresh
     mov byte [rbp + Generator.fresh], 0
     
-    ; Set up new stack
+    ; Set up new stack - be more careful with stack setup
     mov rsp, [rbp + Generator.stack_base]
-    add rsp, 1024 * 4096   ; Move to top of stack
+    test rsp, rsp
+    jz .stack_error
+    
+    ; Print stack base for debugging
+    push rax
+    mov rax, rsp
+    print_hex_num rax, dbg_stack_base_val
+    debug_print dbg_stack_base, dbg_stack_base_len
+    pop rax
+    
+    ; Add stack size with safety check
+    add rsp, 4096  ; Use a smaller stack size for safety
+    
+    ; Align stack to 16 bytes (required by System V ABI)
+    and rsp, ~15
     
     ; Save current RSP as the generator's RSP
     mov [rbp + Generator.rsp], rsp
     
-    ; Call the generator function with proper error handling
-    push rbp        ; Save generator pointer for error handling
-    mov rdi, rbx    ; Pass argument
+    ; Print function pointer for debugging
+    push rax
+    mov rax, [rbp + Generator.func]
+    print_hex_num rax, dbg_func_val
+    debug_print dbg_func, dbg_func_len
+    pop rax
     
-    ; Try to call the function
+    ; Check if function pointer is valid
+    cmp qword [rbp + Generator.func], 0
+    je .func_error
+    
+    ; Call the generator function with proper error handling
+    mov rdi, rbx    ; Pass argument
     call [rbp + Generator.func]
     
     ; If we get here, the generator has finished normally
-    ; Pop the generator pointer
-    pop rbp
-    
     ; Mark generator as dead
     mov byte [rbp + Generator.dead], 1
     
     ; Return to caller safely
     jmp .return_to_caller
     
-.dead_generator:
-    ; Return NULL for dead generators
-    xor rax, rax
-    ret
+.stack_error:
+    ; Print error message
+    debug_print dbg_stack_error, dbg_stack_error_len
+    jmp .return_to_caller
+    
+.func_error:
+    ; Print error message
+    debug_print dbg_func_error, dbg_func_error_len
+    jmp .return_to_caller
 
 .return_to_caller:
     ; Get the generator stack
