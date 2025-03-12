@@ -33,6 +33,13 @@ lib.python_generator_restore_context_with_return.restype = None
 lib.python_generator_yield.argtypes = [ctypes.c_void_p]
 lib.python_generator_yield.restype = ctypes.c_void_p
 
+# Direct access to assembly functions
+lib.generator_yield.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
+lib.generator_yield.restype = ctypes.c_void_p
+
+# Access to the generator stack
+lib.generator_stack = ctypes.c_void_p.in_dll(lib, "generator_stack")
+
 GENERATOR_FUNC = ctypes.CFUNCTYPE(None, ctypes.c_void_p)
 
 STACK_CAPACITY = 1024 * os.sysconf('SC_PAGE_SIZE')  # Match the C implementation
@@ -56,27 +63,41 @@ class Generator(GeneratorStruct):
         if self.dead:
             return None
         
-        if self.fresh:
-            # First call, use generator_next
-            # Pass self as the argument to the generator function
-            return lib.python_generator_next(ctypes.byref(self), 
-                                           ctypes.byref(self) if arg is None else ctypes.c_void_p(arg))
-        else:
-            # Resume with a value
-            return lib.python_generator_yield(ctypes.c_void_p(arg) if arg is not None else None)
+        try:
+            if self.fresh:
+                # First call, use generator_next
+                # Pass self as the argument to the generator function
+                return lib.python_generator_next(ctypes.byref(self), 
+                                               ctypes.byref(self) if arg is None else ctypes.c_void_p(arg))
+            else:
+                # Resume with a value
+                return lib.python_generator_yield(ctypes.c_void_p(arg) if arg is not None else None)
+        except Exception as e:
+            # Mark the generator as dead if an exception occurs
+            self.dead = True
+            print(f"Exception in generator: {e}")
+            return None
 
 def example_generator(arg):
     try:
         print("Generator started")
-        result = lib.python_generator_yield(ctypes.c_void_p(1))
+        # Get the generator stack from the wrapper
+        stack_ptr = ctypes.cast(lib.generator_stack, ctypes.c_void_p).value
+        
+        # Call yield with the stack pointer
+        result = lib.generator_yield(ctypes.c_void_p(1), ctypes.c_void_p(stack_ptr))
         print(f"Generator resumed with {result}")
-        result = lib.python_generator_yield(ctypes.c_void_p(2))
+        
+        # Call yield with the stack pointer again
+        result = lib.generator_yield(ctypes.c_void_p(2), ctypes.c_void_p(stack_ptr))
         print(f"Generator resumed with {result}")
+        
         print("Generator finished")
+        return None
+    except Exception as e:
+        print(f"Exception in generator function: {e}")
     finally:
         # Mark the generator as dead
-        # This is a hack to ensure the generator is properly marked as dead
-        # since we're bypassing the normal generator_finish_current mechanism
         gen = ctypes.cast(arg, ctypes.POINTER(GeneratorStruct))
         if gen:
             gen.contents.dead = True

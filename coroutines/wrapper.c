@@ -11,6 +11,8 @@ typedef struct {
 } Generator_Stack;
 
 // Use the generator_stack from assembly
+// Make it visible to Python
+__attribute__((visibility("default")))
 Generator_Stack* generator_stack;
 
 extern void generator_init(Generator_Stack* stack);

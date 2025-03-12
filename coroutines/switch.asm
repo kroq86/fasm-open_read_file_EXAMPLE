@@ -222,30 +222,66 @@ generator_next:
     ; Save current RSP as the generator's RSP
     mov [rbp + Generator.rsp], rsp
     
-    ; Call the generator function
-    mov rdi, rbx            ; Pass argument
+    ; Call the generator function with proper error handling
+    push rbp        ; Save generator pointer for error handling
+    mov rdi, rbx    ; Pass argument
+    
+    ; Try to call the function
     call [rbp + Generator.func]
+    
+    ; If we get here, the generator has finished normally
+    ; Pop the generator pointer
+    pop rbp
     
     ; Mark generator as dead
     mov byte [rbp + Generator.dead], 1
     
-    ; Return to caller
-    mov rax, [generator_stack]
-    mov rcx, [rax + GeneratorStack.count]
-    test rcx, rcx
-    jz .no_caller_return
-    dec rcx
-    mov rdx, [rax + GeneratorStack.items]
-    mov r8, [rdx + rcx*8]      ; Get caller generator
-    mov rsp, [r8 + Generator.rsp]  ; Restore caller's RSP
-.no_caller_return:
-    
-    ; Return NULL
-    xor rax, rax
-    ret
+    ; Return to caller safely
+    jmp .return_to_caller
     
 .dead_generator:
     ; Return NULL for dead generators
+    xor rax, rax
+    ret
+
+.return_to_caller:
+    ; Get the generator stack
+    mov rax, [generator_stack]
+    test rax, rax
+    jz .no_stack
+    
+    ; Get the stack count
+    mov rcx, [rax + GeneratorStack.count]
+    test rcx, rcx
+    jz .no_caller_return
+    
+    ; Get the caller generator
+    dec rcx
+    mov rdx, [rax + GeneratorStack.items]
+    mov r8, [rdx + rcx*8]
+    test r8, r8
+    jz .no_caller_return
+    
+    ; Get the caller's RSP
+    mov rsp, [r8 + Generator.rsp]
+    test rsp, rsp
+    jz .no_caller_return
+    
+    ; Return NULL
+    xor rax, rax
+    
+    ; Restore registers
+    pop r15
+    pop r14
+    pop r13
+    pop r12
+    pop rbx
+    pop rbp
+    ret
+    
+.no_stack:
+.no_caller_return:
+    ; Emergency exit - just return NULL without changing stack
     xor rax, rax
     ret
 
@@ -258,14 +294,6 @@ generator_yield:
     
     ; Save the stack pointer (passed as second argument)
     mov r12, rsi
-    
-    ; Save registers
-    push rbp
-    push rbx
-    push r12
-    push r13
-    push r14
-    push r15
     
     ; Print stack pointer for debugging
     push rax
@@ -285,11 +313,50 @@ generator_yield:
     debug_print dbg_stack_count, dbg_stack_count_len
     pop rax
     
-    ; For simplicity, just return to the caller
-    ; This is the safest approach given the stack management issues
-.simple_return:
-    ; For the first yield, we need to return to the original caller
-    ; Pop our saved registers
+    ; Get the current generator's stack position
+    mov rcx, [r12 + GeneratorStack.count]
+    test rcx, rcx
+    jz .simple_return
+    
+    ; Save our current context
+    push rbp
+    push rbx
+    push r12
+    push r13
+    push r14
+    push r15
+    
+    ; Get the current generator
+    dec rcx
+    mov rdx, [r12 + GeneratorStack.items]
+    mov r8, [rdx + rcx*8]
+    test r8, r8
+    jz .no_generator
+    
+    ; Save our RSP in the current generator
+    mov [r8 + Generator.rsp], rsp
+    
+    ; Get the caller generator (if any)
+    test rcx, rcx
+    jz .no_caller
+    
+    dec rcx
+    mov r9, [rdx + rcx*8]
+    test r9, r9
+    jz .no_caller
+    
+    ; Switch to the caller's context
+    mov rsp, [r9 + Generator.rsp]
+    test rsp, rsp
+    jz .no_caller
+    
+    ; Return the yield value
+    mov rax, rbx
+    ret
+    
+.no_generator:
+.no_caller:
+    ; Restore our context
     pop r15
     pop r14
     pop r13
@@ -297,7 +364,8 @@ generator_yield:
     pop rbx
     pop rbp
     
-    ; Return the yield value
+.simple_return:
+    ; Just return the yield value
     mov rax, rbx
     ret
 
