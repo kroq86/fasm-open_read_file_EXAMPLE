@@ -1011,3 +1011,126 @@ quicksort:
     ; 3. Recursive sort left partition
     ; ... comments explaining the logic
 ```
+
+## 18. Coroutines and Generators Implementation
+
+### 18.1 Generator Structure
+```nasm
+; ALWAYS define a clear generator structure
+struc Generator {
+    .fresh db 0         ; Is this a fresh generator?
+    .dead db 0          ; Is this generator dead?
+    align 8             ; Ensure proper alignment
+    .rsp dq 0           ; Saved stack pointer
+    .stack_base dq 0    ; Base of generator's stack
+    .func dq 0          ; Function pointer
+}
+```
+
+### 18.2 Generator Stack Management
+```nasm
+; ALWAYS define a clear stack structure
+struc GeneratorStack {
+    .items dq 0         ; Array of generator pointers
+    .count dq 0         ; Number of generators
+    .capacity dq 0      ; Capacity of items array
+}
+
+; ALWAYS initialize the stack properly
+generator_stack: dq 0   ; Global pointer to stack
+```
+
+### 18.3 Generator Function Implementation
+```nasm
+; ALWAYS check generator state first
+generator_next:
+    ; Check if generator is dead
+    cmp byte [rdi + Generator.dead], 0
+    jne .dead_generator
+    
+    ; Check if generator is fresh
+    cmp byte [rdi + Generator.fresh], 0
+    jne .fresh_generator
+    
+    ; Handle existing generator
+    ; ...
+
+.fresh_generator:
+    ; Mark generator as not fresh
+    mov byte [rdi + Generator.fresh], 0
+    
+    ; Save generator pointer before calling function
+    push rdi
+    
+    ; Get and validate function pointer
+    mov rax, [rdi + Generator.func]
+    test rax, rax
+    jz .func_error
+    
+    ; Call function with argument
+    mov rdi, rsi
+    call rax
+    
+    ; Restore generator pointer
+    pop rdi
+    
+    ; Mark as dead after completion
+    mov byte [rdi + Generator.dead], 1
+```
+
+### 18.4 Yield Implementation
+```nasm
+; ALWAYS keep yield implementation simple
+generator_yield:
+    ; Just return the argument for simplicity
+    mov rax, rdi
+    ret
+```
+
+### 18.5 Error Handling in Generators
+```nasm
+; ALWAYS handle error cases
+.func_error:
+    ; Pop saved generator pointer
+    pop rdi
+    
+    ; Mark generator as dead
+    mov byte [rdi + Generator.dead], 1
+    
+    ; Return NULL
+    xor rax, rax
+    ret
+
+.dead_generator:
+    ; Return NULL for dead generators
+    xor rax, rax
+    ret
+```
+
+### 18.6 Debug Messages
+```nasm
+; ALWAYS include debug messages for complex operations
+section '.rodata' writeable
+    dbg_next db 'DEBUG: generator_next called', 0xA, 0
+    dbg_next_len = $ - dbg_next
+    
+    dbg_yield db 'DEBUG: generator_yield called', 0xA, 0
+    dbg_yield_len = $ - dbg_yield
+
+; Use debug print macro
+debug_print dbg_next, dbg_next_len
+```
+
+### 18.7 Foreign Function Interface
+```nasm
+; ALWAYS export symbols for FFI
+public generator_init
+public generator_next
+public generator_yield
+public generator__finish_current
+
+; ALWAYS use standard calling convention
+; RDI: First argument (generator pointer)
+; RSI: Second argument (value/argument)
+; RAX: Return value
+```

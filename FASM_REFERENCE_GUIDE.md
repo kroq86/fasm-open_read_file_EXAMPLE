@@ -1199,4 +1199,283 @@ function_name:
     pop rbx         ; if used
     pop rbp
     ret
-``` 
+```
+
+# FASM Coroutines and Generators Guide
+
+## 1. Coroutine Basics
+
+### 1.1 Generator Structure
+```nasm
+; Generator structure definition
+struc Generator
+{
+    .fresh db 0         ; Is this a fresh generator?
+    .dead db 0          ; Is this generator dead?
+    .padding rb 6       ; Padding for alignment
+    .rsp dq 0           ; Saved stack pointer
+    .stack_base dq 0    ; Base of generator's stack
+    .func dq 0          ; Function pointer
+}
+
+; Generator stack management
+struc Generator_Stack
+{
+    .items dq 0         ; Array of generator pointers
+    .count dq 0         ; Number of generators
+    .capacity dq 0      ; Capacity of items array
+}
+```
+
+### 1.2 Generator Initialization
+```nasm
+generator_init:
+    ; Save generator stack pointer
+    mov [generator_stack], rdi
+    ret
+```
+
+## 2. Generator Implementation
+
+### 2.1 Generator Next Function
+```nasm
+generator_next:
+    ; Check if generator is dead
+    cmp byte [rdi + Generator.dead], 0
+    jne .dead_generator
+    
+    ; Check if generator is fresh
+    cmp byte [rdi + Generator.fresh], 0
+    jne .fresh_generator
+    
+    ; Handle existing generator
+    ; ...
+    ret
+
+.fresh_generator:
+    ; Mark generator as not fresh
+    mov byte [rdi + Generator.fresh], 0
+    
+    ; Save generator pointer
+    push rdi
+    
+    ; Get function pointer
+    mov rax, [rdi + Generator.func]
+    test rax, rax
+    jz .func_error
+    
+    ; Call function with argument
+    mov rdi, rsi
+    call rax
+    
+    ; Restore generator pointer
+    pop rdi
+    
+    ; Mark as dead after completion
+    mov byte [rdi + Generator.dead], 1
+    
+    ; Return NULL
+    xor rax, rax
+    ret
+
+.func_error:
+    ; Pop saved generator pointer
+    pop rdi
+    
+    ; Mark generator as dead
+    mov byte [rdi + Generator.dead], 1
+    
+    ; Return NULL
+    xor rax, rax
+    ret
+
+.dead_generator:
+    ; Return NULL for dead generators
+    xor rax, rax
+    ret
+```
+
+### 2.2 Generator Yield Function
+```nasm
+generator_yield:
+    ; Simply return the argument
+    mov rax, rdi
+    ret
+```
+
+## 3. C Wrapper Integration
+
+### 3.1 C Structure Definitions
+```c
+// Generator structure
+typedef struct {
+    char fresh;
+    char dead;
+    char padding[6];
+    void* rsp;
+    void* stack_base;
+    void* func;
+} Generator;
+
+// Generator stack management
+typedef struct {
+    void **items;
+    size_t count;
+    size_t capacity;
+} Generator_Stack;
+```
+
+### 3.2 C Wrapper Functions
+```c
+// Initialize generator system
+void python_generator_init() {
+    // Initialize generator stack
+    Generator_Stack* stack = malloc(sizeof(Generator_Stack));
+    stack->items = malloc(sizeof(void*) * 16);  // Initial capacity
+    stack->count = 0;
+    stack->capacity = 16;
+    
+    // Add initial generator (main context)
+    void* main_gen = malloc(sizeof(void*) * 8);
+    memset(main_gen, 0, sizeof(*main_gen));
+    stack->items[stack->count++] = main_gen;
+    
+    // Set the global stack pointer
+    generator_stack = stack;
+    
+    // Initialize the assembly code with our stack
+    generator_init(stack);
+}
+
+// Call generator_next
+void* python_generator_next(void* g, void* arg) {
+    // Push generator onto stack
+    if (generator_stack->count >= generator_stack->capacity) {
+        generator_stack->capacity *= 2;
+        generator_stack->items = realloc(generator_stack->items, 
+                                        sizeof(void*) * generator_stack->capacity);
+    }
+    
+    // Store the generator in the stack
+    generator_stack->items[generator_stack->count++] = g;
+    
+    // Call the assembly function
+    void* result = generator_next(g, arg);
+    
+    // Pop the generator from the stack
+    if (generator_stack->count > 0) {
+        generator_stack->count--;
+    }
+    
+    return result;
+}
+
+// Call generator_yield
+void* python_generator_yield(void* arg) {
+    // Call the assembly function
+    return generator_yield(arg);
+}
+```
+
+## 4. Python Integration
+
+### 4.1 Python Structure Definition
+```python
+class GeneratorStruct(ctypes.Structure):
+    _fields_ = [
+        ("fresh", ctypes.c_bool),
+        ("dead", ctypes.c_bool),
+        ("_padding", ctypes.c_char * 6),  # Align to 8 bytes
+        ("rsp", ctypes.c_void_p),
+        ("stack_base", ctypes.c_void_p),
+        ("func", ctypes.c_void_p),
+    ]
+```
+
+### 4.2 Python Generator Class
+```python
+class Generator(GeneratorStruct):
+    def __init__(self, func):
+        super().__init__()
+        self.fresh = True
+        self.dead = False
+        self.func_obj = GENERATOR_FUNC(func)  # Keep reference to prevent GC
+        self.func = ctypes.cast(self.func_obj, ctypes.c_void_p).value
+        
+        # We don't actually use the stack in our simplified implementation
+        self.stack_base = 0
+        self.rsp = 0
+    
+    def next(self, arg=None):
+        """Send a value to the generator and get the next yielded value."""
+        if self.dead:
+            return None
+        
+        try:
+            # For the first call, pass self as the argument to the generator function
+            if self.fresh:
+                return lib.python_generator_next(ctypes.byref(self), ctypes.byref(self))
+            else:
+                # For subsequent calls, pass the provided argument
+                return lib.python_generator_next(ctypes.byref(self), 
+                                               ctypes.c_void_p(arg) if arg is not None else None)
+        except Exception as e:
+            # Mark the generator as dead if an exception occurs
+            self.dead = True
+            return None
+```
+
+### 4.3 Python Generator Function Example
+```python
+def example_generator(arg):
+    try:
+        # Convert the argument to a generator pointer
+        gen_ptr = ctypes.cast(arg, ctypes.c_void_p).value
+        
+        # Yield a value and get the first argument from the caller
+        result = lib.python_generator_yield(ctypes.c_void_p(1))
+        
+        # Yield another value and get the second argument from the caller
+        result = lib.python_generator_yield(ctypes.c_void_p(2))
+        
+        # Yield a third value and get the third argument from the caller
+        result = lib.python_generator_yield(ctypes.c_void_p(3))
+        
+    except Exception as e:
+        print(f"Exception in generator function: {e}")
+    finally:
+        # Mark the generator as dead if needed
+        if arg:
+            try:
+                gen = ctypes.cast(arg, ctypes.POINTER(GeneratorStruct))
+                if gen:
+                    gen.contents.dead = True
+            except Exception as e:
+                print(f"Error marking generator as dead: {e}")
+```
+
+## 5. Best Practices for Coroutines
+
+### 5.1 Generator State Management
+1. Always check if a generator is dead before attempting to resume it
+2. Mark generators as dead after they complete or encounter errors
+3. Use a consistent structure for generator objects
+4. Maintain a stack of active generators
+
+### 5.2 Error Handling
+1. Check function pointers before calling them
+2. Handle exceptions in generator functions
+3. Clean up resources when generators complete
+4. Provide debug information for troubleshooting
+
+### 5.3 Performance Considerations
+1. Minimize context switching overhead
+2. Use efficient memory allocation for generator stacks
+3. Avoid unnecessary copying of data between contexts
+4. Release resources promptly when generators complete
+
+### 5.4 Integration with Host Languages
+1. Ensure structure definitions match between assembly, C, and host language
+2. Use appropriate calling conventions for cross-language calls
+3. Handle memory management consistently across language boundaries
+4. Provide clear documentation for API users 
