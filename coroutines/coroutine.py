@@ -50,6 +50,19 @@ class Generator(GeneratorStruct):
         self.stack_base = ctypes.addressof(self.stack_memory)
         self.rsp = self.stack_base + STACK_CAPACITY - 16
         self.rsp = self.rsp - (self.rsp % 16)  # 16-byte alignment
+    
+    def next(self, arg=None):
+        """Send a value to the generator and get the next yielded value."""
+        if self.dead:
+            return None
+        
+        if self.fresh:
+            # First call, use generator_next
+            return lib.python_generator_next(ctypes.byref(self), 
+                                           ctypes.c_void_p(arg) if arg is not None else None)
+        else:
+            # Resume with a value
+            return lib.python_generator_yield(ctypes.c_void_p(arg) if arg is not None else None)
 
 def example_generator(arg):
     print("Generator started")
@@ -59,6 +72,7 @@ def example_generator(arg):
     print(f"Generator resumed with {result}")
     print("Generator finished")
 
+# Initialize the generator system
 lib.python_generator_init()
 
 # Create generator
@@ -66,11 +80,19 @@ gen = Generator(example_generator)
 
 # Start generator
 print("Starting generator")
-result = lib.python_generator_next(ctypes.byref(gen), None)
+result = gen.next(None)
 print(f"Main got {result}")
 
 # Resume generator twice
 print("Resuming generator")
-lib.python_generator_restore_context_with_return(gen.rsp, ctypes.c_void_p(42))
+result = gen.next(42)
+print(f"Main got {result}")
+
 print("Resuming generator again")
-lib.python_generator_restore_context_with_return(gen.rsp, ctypes.c_void_p(84))
+result = gen.next(84)
+print(f"Main got {result}")
+
+# One more call should return None since generator is finished
+print("Final call")
+result = gen.next(0)
+print(f"Main got {result}")

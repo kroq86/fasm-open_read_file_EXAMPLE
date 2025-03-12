@@ -1,6 +1,7 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdio.h>
 
 // Generator stack management
 typedef struct {
@@ -12,7 +13,7 @@ typedef struct {
 // Use the generator_stack from assembly
 Generator_Stack* generator_stack;
 
-extern void generator_init(void);
+extern void generator_init(Generator_Stack* stack);
 extern void* generator_next(void* g, void* arg);
 extern void generator_restore_context(void* context);
 extern void generator_restore_context_with_return(void* context, void* ret);
@@ -35,7 +36,11 @@ void python_generator_init() {
     // Set the global stack pointer
     generator_stack = stack;
     
-    generator_init();
+    // Initialize the assembly code with our stack
+    generator_init(stack);
+    
+    printf("DEBUG: Generator stack initialized at %p\n", (void*)stack);
+    printf("DEBUG: Initial count: %zu\n", stack->count);
 }
 
 __attribute__((visibility("default")))
@@ -45,9 +50,21 @@ void* python_generator_next(void* g, void* arg) {
         generator_stack->capacity *= 2;
         generator_stack->items = realloc(generator_stack->items, sizeof(void*) * generator_stack->capacity);
     }
+    
+    // Store the generator in the stack
     generator_stack->items[generator_stack->count++] = g;
     
-    return generator_next(g, arg);
+    printf("DEBUG: python_generator_next - stack count: %zu\n", generator_stack->count);
+    
+    // Call the assembly function
+    void* result = generator_next(g, arg);
+    
+    // Pop the generator from the stack
+    if (generator_stack->count > 0) {
+        generator_stack->count--;
+    }
+    
+    return result;
 }
 
 __attribute__((visibility("default")))
@@ -62,7 +79,12 @@ void python_generator_restore_context_with_return(void* context, void* ret) {
 
 __attribute__((visibility("default")))
 void* python_generator_yield(void* arg) {
-    return generator_yield(arg);
+    printf("DEBUG: python_generator_yield - stack count: %zu\n", generator_stack->count);
+    
+    // Call the assembly function
+    void* result = generator_yield(arg);
+    
+    return result;
 }
 
 // Dummy main function that just returns success
