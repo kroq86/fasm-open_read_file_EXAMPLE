@@ -256,9 +256,9 @@ read_loop:
 
 ### 14.1 Basic Program
 ```nasm
-include "common.inc"
+format ELF64 executable
 
-program_init
+include "common.inc"
 
 segment readable writeable
     ; Data here
