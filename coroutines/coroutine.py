@@ -66,19 +66,20 @@ class Generator(GeneratorStruct):
             return lib.python_generator_yield(ctypes.c_void_p(arg) if arg is not None else None)
 
 def example_generator(arg):
-    print("Generator started")
-    result = lib.python_generator_yield(ctypes.c_void_p(1))
-    print(f"Generator resumed with {result}")
-    result = lib.python_generator_yield(ctypes.c_void_p(2))
-    print(f"Generator resumed with {result}")
-    print("Generator finished")
-    
-    # Mark the generator as dead
-    # This is a hack to ensure the generator is properly marked as dead
-    # since we're bypassing the normal generator_finish_current mechanism
-    gen = ctypes.cast(arg, ctypes.POINTER(GeneratorStruct))
-    if gen:
-        gen.contents.dead = True
+    try:
+        print("Generator started")
+        result = lib.python_generator_yield(ctypes.c_void_p(1))
+        print(f"Generator resumed with {result}")
+        result = lib.python_generator_yield(ctypes.c_void_p(2))
+        print(f"Generator resumed with {result}")
+        print("Generator finished")
+    finally:
+        # Mark the generator as dead
+        # This is a hack to ensure the generator is properly marked as dead
+        # since we're bypassing the normal generator_finish_current mechanism
+        gen = ctypes.cast(arg, ctypes.POINTER(GeneratorStruct))
+        if gen:
+            gen.contents.dead = True
 
 # Initialize the generator system
 lib.python_generator_init()

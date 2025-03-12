@@ -17,7 +17,8 @@ extern void generator_init(Generator_Stack* stack);
 extern void* generator_next(void* g, void* arg);
 extern void generator_restore_context(void* context);
 extern void generator_restore_context_with_return(void* context, void* ret);
-extern void* generator_yield(void* arg);
+extern void* generator_yield(void* arg, Generator_Stack* stack);
+extern void* generator__finish_current(Generator_Stack* stack);
 
 // Export our functions with proper visibility
 __attribute__((visibility("default")))
@@ -81,8 +82,8 @@ __attribute__((visibility("default")))
 void* python_generator_yield(void* arg) {
     printf("DEBUG: python_generator_yield - stack count: %zu\n", generator_stack->count);
     
-    // Call the assembly function
-    void* result = generator_yield(arg);
+    // Call the assembly function with the stack pointer
+    void* result = generator_yield(arg, generator_stack);
     
     return result;
 }

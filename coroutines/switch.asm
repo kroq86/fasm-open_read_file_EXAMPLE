@@ -256,6 +256,9 @@ generator_yield:
     ; Save the yield value
     mov rbx, rdi
     
+    ; Save the stack pointer (passed as second argument)
+    mov r12, rsi
+    
     ; Save registers
     push rbp
     push rbx
@@ -264,22 +267,20 @@ generator_yield:
     push r14
     push r15
     
-    ; Get the generator stack directly from C
-    mov rax, [generator_stack]
-    
     ; Print stack pointer for debugging
     push rax
+    mov rax, r12
     print_hex_num rax, dbg_stack_ptr_val
     debug_print dbg_stack_ptr, dbg_stack_ptr_len
     pop rax
     
     ; Check if we have a valid stack
-    test rax, rax
+    test r12, r12
     jz .simple_return
     
     ; Print stack count for debugging
     push rax
-    mov rax, [rax + GeneratorStack.count]
+    mov rax, [r12 + GeneratorStack.count]
     print_hex_num rax, dbg_stack_count_val
     debug_print dbg_stack_count, dbg_stack_count_len
     pop rax
@@ -367,15 +368,30 @@ generator_return:
 generator__finish_current:
     debug_print dbg_finish, dbg_finish_len
     
+    ; Save the stack pointer (passed as first argument)
+    mov r12, rdi
+    
     ; Print stack pointer for debugging
     push rax
-    mov rax, [generator_stack]
+    mov rax, r12
     print_hex_num rax, dbg_stack_ptr_val
     debug_print dbg_stack_ptr, dbg_stack_ptr_len
     pop rax
     
+    ; Check if we have a valid stack
+    test r12, r12
+    jz .simple_return
+    
+    ; Print stack count for debugging
+    push rax
+    mov rax, [r12 + GeneratorStack.count]
+    print_hex_num rax, dbg_stack_count_val
+    debug_print dbg_stack_count, dbg_stack_count_len
+    pop rax
+    
     ; For simplicity, just return NULL
     ; This is the safest approach given the stack management issues
+.simple_return:
     xor rax, rax
     ret
 
