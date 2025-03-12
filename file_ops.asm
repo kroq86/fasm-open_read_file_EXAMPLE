@@ -1,9 +1,8 @@
 ; File Operations Example
 ; Demonstrates common.inc features through file I/O operations
+format ELF64 executable
 
 include 'common.inc'
-
-program_init
 
 segment readable writeable
     ; File paths and messages
@@ -17,7 +16,6 @@ segment readable writeable
     msg_success_len = $ - msg_success
     msg_error db 'Error occurred: ', 0
     msg_error_len = $ - msg_error
-    newline db 0xA
     
     ; Buffers
     read_buffer rb BUFFER_MEDIUM
@@ -38,13 +36,6 @@ segment readable writeable
     buffer buffer_info_64    ; Instance of our structure
 
 segment readable executable
-
-; Error handler function
-error_handler:
-    preserve_regs
-    syscall3 SYS_write, STDERR, msg_error, msg_error_len
-    restore_regs
-    program_exit EXIT_FAILURE
 
 ; Function to process buffer (uppercase conversion)
 process_buffer:

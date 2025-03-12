@@ -1,9 +1,9 @@
 ; Two Sum Problem: Find indices of two numbers that add up to target
 ; Example: [2,7,11,15], target=9 -> output: [0,1] (2+7=9)
 
-include 'common.inc'
+format ELF64 executable
 
-program_init        ; Sets up format ELF64 executable and segments
+include 'common.inc'
 
 segment readable writeable
     ; Constants first (following AI rules 2.1)
@@ -29,19 +29,6 @@ segment readable writeable
     result_indices dq 0, 0           ; Will store the found indices
 
 segment readable executable
-
-; Error handler function
-error_handler:
-    ; Print error message
-    mov rax, SYS_write
-    mov rdi, STDERR
-    mov rsi, msg_error
-    mov rdx, msg_error_len
-    syscall
-    ; Exit with error
-    mov rax, SYS_exit
-    mov rdi, EXIT_FAILURE
-    syscall
 
 ; Print functions
 print:

@@ -319,14 +319,6 @@ macro restore_regs
     pop rax
 }
 
-; Common program structure
-macro program_init
-{
-    format ELF64 executable
-    segment readable writeable
-    segment readable executable
-}
-
 macro program_exit code
 {
     mov rax, SYS_exit
