@@ -27,8 +27,15 @@ segment readable writeable
     fd_in dq 0
     fd_out dq 0
     
-    ; Buffer info structure
-    buffer_info buffer_info
+    ; Buffer info structure with 64-bit fields
+    struc buffer_info_64
+    {
+        .data dq 0    ; 64-bit pointer
+        .size dq 0    ; 64-bit size
+        .used dq 0    ; 64-bit used count
+    }
+    
+    buffer buffer_info_64    ; Instance of our structure
 
 segment readable executable
 
@@ -77,9 +84,9 @@ main:
     stack_frame_create 16   ; Create stack frame
     
     ; Initialize buffer info
-    mov [buffer_info.data], read_buffer
-    mov [buffer_info.size], BUFFER_MEDIUM
-    mov [buffer_info.used], 0
+    mov qword [buffer.data], read_buffer
+    mov qword [buffer.size], BUFFER_MEDIUM
+    mov qword [buffer.used], 0
     
     ; Print reading message
     syscall3_safe SYS_write, STDOUT, msg_reading, msg_reading_len
@@ -97,15 +104,15 @@ main:
     
     ; Read from input file
     read_file [fd_in], read_buffer, BUFFER_MEDIUM
-    mov [buffer_info.used], rax    ; Store bytes read
+    mov qword [buffer.used], rax    ; Store bytes read (64-bit)
     
     ; Process buffer (convert to uppercase)
     mov rdi, read_buffer
-    mov rsi, [buffer_info.used]
+    mov rsi, [buffer.used]
     call process_buffer
     
     ; Write to output file
-    write_file [fd_out], read_buffer, [buffer_info.used]
+    write_file [fd_out], read_buffer, [buffer.used]
     
     ; Close files
     close_file [fd_in]
